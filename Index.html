@@ -1,0 +1,408 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Broker Bee — HRMS Portal</title>
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet"/>
+<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:#0D0B09;color:#F2EDE4;font-family:'Outfit',sans-serif}
+  textarea,input,select,button{font-family:'Outfit',sans-serif}
+  ::-webkit-scrollbar{width:6px;height:6px}
+  ::-webkit-scrollbar-track{background:#1A1712}
+  ::-webkit-scrollbar-thumb{background:#3A3228;border-radius:3px}
+  ::-webkit-scrollbar-thumb:hover{background:#F0A500}
+  @keyframes fadeIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+  .fade{animation:fadeIn 0.3s ease}
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const{useState,useEffect}=React;
+
+// ======= STORAGE (localStorage for deployment) =======
+const DB={
+  get:(k,def=null)=>Promise.resolve((()=>{try{const r=localStorage.getItem(k);return r?JSON.parse(r):def;}catch{return def;}})()),
+  set:(k,v)=>Promise.resolve((()=>{try{localStorage.setItem(k,JSON.stringify(v));}catch{}})()),
+};
+
+// ======= DEFAULTS =======
+const INIT_USERS=[
+  {id:"a1",name:"Administrator",username:"admin",password:"Admin@BrokerBee24",role:"admin",email:"admin@brokerbee.com",dept:"Management",active:true},
+  {id:"e1",name:"Arshmaan Ali",username:"arshmaan.ali",password:"Arshmaan@123",role:"employee",email:"arshmaan@brokerbee.com",dept:"Brokerage",active:true},
+  {id:"e2",name:"Steve Nickerson",username:"steve.nickerson",password:"Steve@123",role:"employee",email:"steve@brokerbee.com",dept:"Brokerage",active:true},
+  {id:"e3",name:"Luka Simonson",username:"luka.simonson",password:"Luka@123",role:"employee",email:"luka@brokerbee.com",dept:"Brokerage",active:true},
+  {id:"e4",name:"Yezil Hose",username:"yezil.hose",password:"Yezil@123",role:"employee",email:"yezil@brokerbee.com",dept:"Brokerage",active:true},
+];
+
+// ======= THEME =======
+const C={bg:"#0D0B09",surf:"#181510",surf2:"#1E1B14",surf3:"#252118",bdr:"#2A2519",gold:"#F0A500",goldL:"#F7C948",goldD:"rgba(240,165,0,0.12)",goldB:"rgba(240,165,0,0.22)",txt:"#F2EDE4",txtD:"#8A7E6E",txtM:"#524A3E",red:"#D95151",redD:"rgba(217,81,81,0.12)",grn:"#45A874",grnD:"rgba(69,168,116,0.12)",blu:"#5493C7",font:"'Outfit',sans-serif",serif:"'Instrument Serif',serif"};
+
+// ======= HELPERS =======
+const today=()=>new Date().toISOString().split("T")[0];
+const dateLabel=d=>new Date(d+"T12:00:00").toLocaleDateString("en-US",{weekday:"short",month:"short",day:"numeric",year:"numeric"});
+const initials=n=>n.split(" ").map(w=>w[0]).join("").toUpperCase().slice(0,2);
+const aColor=id=>{const p=["#F0A500","#5493C7","#45A874","#D95151","#9B6DB5","#D97B35"];let h=5381;for(let c of id)h=(h<<5)+h+c.charCodeAt(0);return p[Math.abs(h)%p.length];};
+const greeting=()=>{const h=new Date().getHours();return h<12?"Good morning":h<17?"Good afternoon":"Good evening";};
+
+// ======= SHARED STYLES =======
+const inp=(extra={})=>({width:"100%",padding:"10px 14px",background:C.surf3,border:`1px solid ${C.bdr}`,borderRadius:8,color:C.txt,fontSize:14,outline:"none",boxSizing:"border-box",...extra});
+const bts=(v="gold",extra={})=>({padding:"10px 22px",border:"none",borderRadius:8,cursor:"pointer",fontSize:14,fontWeight:600,transition:"opacity 0.15s",
+  ...(v==="gold"?{background:`linear-gradient(135deg,${C.gold},${C.goldL})`,color:"#0D0B09"}:{}),
+  ...(v==="outline"?{background:"transparent",border:`1px solid ${C.bdr}`,color:C.txtD}:{}),
+  ...(v==="danger"?{background:C.redD,border:`1px solid ${C.red}`,color:C.red}:{}),
+  ...extra});
+const card=(extra={})=>({background:C.surf,border:`1px solid ${C.bdr}`,borderRadius:12,padding:"20px 24px",...extra});
+
+// ======= APP =======
+function App(){
+  const[users,setUsers]=useState([]);
+  const[reports,setReports]=useState([]);
+  const[loading,setLoading]=useState(true);
+  const[me,setMe]=useState(null);
+  const[un,setUn]=useState("");const[pw,setPw]=useState("");const[showPw,setShowPw]=useState(false);const[loginErr,setLoginErr]=useState("");
+  const[empTab,setEmpTab]=useState("submit");
+  const[rf,setRf]=useState({tasks:"",deals:"",leads:"",challenges:"",tomorrow:"",hours:"8"});
+  const[rMsg,setRMsg]=useState({t:"",s:""});
+  const[adTab,setAdTab]=useState("overview");
+  const[fUsr,setFUsr]=useState("all");const[fDate,setFDate]=useState("");const[expanded,setExpanded]=useState(null);
+  const[uModal,setUModal]=useState(false);const[editUsr,setEditUsr]=useState(null);
+  const[uf,setUf]=useState({name:"",username:"",email:"",password:"",dept:"Brokerage",role:"employee"});
+  const[uMsg,setUMsg]=useState("");
+
+  useEffect(()=>{
+    (async()=>{
+      const u=await DB.get("bbhr_u5",null);
+      const r=await DB.get("bbhr_r5",[]);
+      if(!u){await DB.set("bbhr_u5",INIT_USERS);setUsers(INIT_USERS);}else setUsers(u);
+      setReports(r);setLoading(false);
+    })();
+  },[]);
+
+  const todayStr=today();
+  const login=e=>{e.preventDefault();const user=users.find(u=>(u.username===un.trim()||u.email===un.trim())&&u.password===pw&&u.active!==false);if(user){setMe(user);setLoginErr("");setUn("");setPw("");}else setLoginErr("Incorrect username or password.");};
+  const logout=()=>{setMe(null);setEmpTab("submit");setAdTab("overview");setRMsg({t:"",s:""});};
+  const submitRpt=async()=>{if(!rf.tasks.trim()){setRMsg({t:"Tasks Completed is required.",s:"err"});return;}const ex=reports.find(r=>r.uid===me.id&&r.date===todayStr);const d={...rf,uid:me.id,uname:me.name,dept:me.dept,date:todayStr,updAt:new Date().toISOString()};const up=ex?reports.map(r=>r.id===ex.id?{...r,...d}:r):[...reports,{id:`r${Date.now()}`,subAt:new Date().toISOString(),...d}];await DB.set("bbhr_r5",up);setReports(up);setRMsg({t:ex?"Report updated! ✓":"Report submitted! ✓",s:"ok"});if(!ex)setRf({tasks:"",deals:"",leads:"",challenges:"",tomorrow:"",hours:"8"});};
+  const saveUsr=async()=>{if(!uf.name||!uf.username||!uf.password){setUMsg("Name, username and password are required.");return;}if(users.find(u=>u.username===uf.username&&u.id!==editUsr?.id)){setUMsg("Username already taken.");return;}const up=editUsr?users.map(u=>u.id===editUsr.id?{...u,...uf}:u):[...users,{...uf,id:`u${Date.now()}`,active:true}];await DB.set("bbhr_u5",up);setUsers(up);setUModal(false);setEditUsr(null);setUf({name:"",username:"",email:"",password:"",dept:"Brokerage",role:"employee"});setUMsg("");};
+  const toggleActive=async id=>{const up=users.map(u=>u.id===id?{...u,active:!u.active}:u);await DB.set("bbhr_u5",up);setUsers(up);};
+  const openEdit=u=>{setUf({name:u.name,username:u.username,email:u.email||"",password:u.password,dept:u.dept||"Brokerage",role:u.role});setEditUsr(u);setUModal(true);setUMsg("");};
+
+  const myRpts=reports.filter(r=>r.uid===me?.id).sort((a,b)=>b.date.localeCompare(a.date));
+  const todayRpt=reports.find(r=>r.uid===me?.id&&r.date===todayStr);
+  const empUsrs=users.filter(u=>u.role==="employee");
+  const actEmps=empUsrs.filter(u=>u.active!==false);
+  const rptdToday=[...new Set(reports.filter(r=>r.date===todayStr).map(r=>r.uid))];
+  const filtRpts=reports.filter(r=>(fUsr==="all"||r.uid===fUsr)&&(!fDate||r.date===fDate)).sort((a,b)=>b.date.localeCompare(a.date));
+
+  if(loading)return(
+    <div style={{minHeight:"100vh",background:C.bg,display:"flex",alignItems:"center",justifyContent:"center"}}>
+      <div style={{textAlign:"center"}}><div style={{fontSize:54,marginBottom:16}}>🐝</div><div style={{color:C.gold,fontSize:18,fontWeight:600}}>Loading Broker Bee HRMS</div><div style={{color:C.txtD,fontSize:14,marginTop:6}}>Please wait...</div></div>
+    </div>
+  );
+
+  // ====== LOGIN ======
+  if(!me)return(
+    <div style={{minHeight:"100vh",background:C.bg,display:"flex",alignItems:"center",justifyContent:"center",position:"relative",overflow:"hidden"}}>
+      <svg style={{position:"absolute",inset:0,width:"100%",height:"100%",opacity:0.035}}><defs><pattern id="hx" x="0" y="0" width="56" height="48" patternUnits="userSpaceOnUse"><polygon points="28,2 54,16 54,44 28,58 2,44 2,16" fill="none" stroke="#F0A500" strokeWidth="1"/></pattern></defs><rect width="100%" height="100%" fill="url(#hx)"/></svg>
+      <div style={{position:"absolute",width:700,height:700,borderRadius:"50%",background:"radial-gradient(circle,rgba(240,165,0,0.05) 0%,transparent 70%)",top:"50%",left:"50%",transform:"translate(-50%,-50%)",pointerEvents:"none"}}/>
+      <div style={{width:430,position:"relative",zIndex:1}} className="fade">
+        <div style={{textAlign:"center",marginBottom:36}}>
+          <div style={{display:"inline-flex",alignItems:"center",justifyContent:"center",width:76,height:76,background:`linear-gradient(135deg,${C.gold},${C.goldL})`,borderRadius:22,marginBottom:18,fontSize:38,boxShadow:"0 0 50px rgba(240,165,0,0.25)"}}>🐝</div>
+          <div style={{fontFamily:C.serif,fontSize:34,color:C.txt,lineHeight:1}}>Broker Bee</div>
+          <div style={{fontSize:11,color:C.gold,marginTop:8,letterSpacing:4,textTransform:"uppercase",fontWeight:600}}>HR Management System</div>
+        </div>
+        <div style={{...card(),padding:"36px 38px",boxShadow:"0 30px 80px rgba(0,0,0,0.6)"}}>
+          <div style={{marginBottom:28}}><div style={{fontSize:21,fontWeight:700,color:C.txt}}>Sign In</div><div style={{color:C.txtD,fontSize:14,marginTop:3}}>Access your workspace</div></div>
+          <form onSubmit={login}>
+            <div style={{marginBottom:18}}>
+              <label style={{display:"block",fontSize:13,color:C.txtD,marginBottom:8,fontWeight:500}}>Username or Email</label>
+              <input value={un} onChange={e=>setUn(e.target.value)} placeholder="Enter username or email" style={inp()} onFocus={e=>e.target.style.borderColor=C.gold} onBlur={e=>e.target.style.borderColor=C.bdr} autoComplete="username"/>
+            </div>
+            <div style={{marginBottom:loginErr?16:20}}>
+              <label style={{display:"block",fontSize:13,color:C.txtD,marginBottom:8,fontWeight:500}}>Password</label>
+              <div style={{position:"relative"}}>
+                <input type={showPw?"text":"password"} value={pw} onChange={e=>setPw(e.target.value)} placeholder="Enter password" style={inp({paddingRight:44})} onFocus={e=>e.target.style.borderColor=C.gold} onBlur={e=>e.target.style.borderColor=C.bdr} autoComplete="current-password"/>
+                <button type="button" onClick={()=>setShowPw(!showPw)} style={{position:"absolute",right:12,top:"50%",transform:"translateY(-50%)",background:"none",border:"none",cursor:"pointer",color:C.txtD,fontSize:15,padding:4}}>{showPw?"🙈":"👁️"}</button>
+              </div>
+            </div>
+            {loginErr&&<div style={{marginBottom:18,padding:"10px 14px",background:C.redD,border:`1px solid ${C.red}`,borderRadius:8,fontSize:13,color:C.red}}>{loginErr}</div>}
+            <button type="submit" style={bts("gold",{width:"100%",padding:"13px",fontSize:15,borderRadius:10})}>Sign In →</button>
+          </form>
+          <div style={{marginTop:24,padding:"16px",background:C.goldD,border:`1px solid ${C.goldB}`,borderRadius:10}}>
+            <div style={{fontSize:11,color:C.gold,fontWeight:700,marginBottom:10,textTransform:"uppercase",letterSpacing:1}}>Default Credentials</div>
+            <div style={{fontSize:12,color:C.txtD,lineHeight:2.1}}>
+              <span style={{color:C.gold}}>Admin:</span> admin / Admin@BrokerBee24<br/>
+              <span style={{color:C.gold}}>Arshmaan:</span> arshmaan.ali / Arshmaan@123<br/>
+              <span style={{color:C.gold}}>Steve:</span> steve.nickerson / Steve@123<br/>
+              <span style={{color:C.gold}}>Luka:</span> luka.simonson / Luka@123<br/>
+              <span style={{color:C.gold}}>Yezil:</span> yezil.hose / Yezil@123
+            </div>
+          </div>
+        </div>
+        <div style={{textAlign:"center",marginTop:20,color:C.txtM,fontSize:12}}>© 2025 Broker Bee · All rights reserved</div>
+      </div>
+    </div>
+  );
+
+  // ====== EMPLOYEE ======
+  if(me.role==="employee"){
+    const ac=aColor(me.id);
+    return(
+      <div style={{minHeight:"100vh",background:C.bg}} className="fade">
+        <div style={{background:C.surf,borderBottom:`1px solid ${C.bdr}`,padding:"0 32px",display:"flex",alignItems:"center",justifyContent:"space-between",height:64,position:"sticky",top:0,zIndex:100}}>
+          <div style={{display:"flex",alignItems:"center",gap:12}}><span style={{fontSize:24}}>🐝</span><div style={{fontFamily:C.serif,fontSize:20,color:C.txt}}>Broker Bee <span style={{fontSize:13,color:C.txtD,fontFamily:C.font,fontWeight:400,marginLeft:4}}>HRMS</span></div></div>
+          <div style={{display:"flex",alignItems:"center",gap:14}}>
+            <div style={{textAlign:"right"}}><div style={{fontSize:14,fontWeight:600,color:C.txt}}>{me.name}</div><div style={{fontSize:11,color:C.txtD}}>{me.dept} · Employee</div></div>
+            <div style={{width:36,height:36,borderRadius:"50%",background:`linear-gradient(135deg,${ac},${ac}88)`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:13,fontWeight:700,color:"#fff"}}>{initials(me.name)}</div>
+            <button onClick={logout} style={bts("outline",{padding:"7px 16px",fontSize:13})} onMouseEnter={e=>{e.target.style.borderColor=C.red;e.target.style.color=C.red;}} onMouseLeave={e=>{e.target.style.borderColor=C.bdr;e.target.style.color=C.txtD;}}>Sign Out</button>
+          </div>
+        </div>
+        <div style={{maxWidth:860,margin:"0 auto",padding:"36px 24px"}}>
+          <div style={{marginBottom:30}}>
+            <div style={{fontSize:27,fontWeight:800,color:C.txt}}>{greeting()}, {me.name.split(" ")[0]}! 👋</div>
+            <div style={{color:C.txtD,fontSize:14,marginTop:5,display:"flex",alignItems:"center",gap:10}}>
+              <span>{dateLabel(todayStr)}</span><span style={{color:C.bdr}}>·</span>
+              <span style={todayRpt?{color:C.grn}:{color:C.gold}}>{todayRpt?"✓ Report submitted today":"⏳ Report pending"}</span>
+            </div>
+          </div>
+          <div style={{display:"flex",gap:4,marginBottom:28,background:C.surf,borderRadius:10,padding:4,width:"fit-content",border:`1px solid ${C.bdr}`}}>
+            {[["submit","📝 Daily Report"],["history","📋 My History"]].map(([k,l])=>(
+              <button key={k} onClick={()=>setEmpTab(k)} style={{padding:"8px 22px",border:"none",borderRadius:7,cursor:"pointer",fontSize:14,fontWeight:600,background:empTab===k?`linear-gradient(135deg,${C.gold},${C.goldL})`:"transparent",color:empTab===k?"#0D0B09":C.txtD,transition:"all 0.2s"}}>{l}</button>
+            ))}
+          </div>
+
+          {empTab==="submit"&&(
+            <div style={card()} className="fade">
+              <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",marginBottom:26}}>
+                <div><div style={{fontSize:19,fontWeight:700,color:C.txt}}>Daily Report — {dateLabel(todayStr)}</div><div style={{fontSize:13,color:C.txtD,marginTop:4}}>{todayRpt?"Report submitted. You can update it below.":"Fill in your daily work summary."}</div></div>
+                {todayRpt&&<span style={{padding:"4px 14px",background:C.grnD,border:`1px solid ${C.grn}`,borderRadius:20,fontSize:12,color:C.grn,fontWeight:600,whiteSpace:"nowrap"}}>Submitted ✓</span>}
+              </div>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:18}}>
+                <div style={{gridColumn:"1/-1"}}>
+                  <label style={{display:"block",fontSize:13,color:C.txtD,marginBottom:8,fontWeight:600}}>Tasks Completed Today <span style={{color:C.red}}>*</span></label>
+                  <textarea value={rf.tasks} onChange={e=>setRf({...rf,tasks:e.target.value})} placeholder="List all tasks and activities completed today..." rows={4} style={inp({resize:"vertical"})} onFocus={e=>e.target.style.borderColor=C.gold} onBlur={e=>e.target.style.borderColor=C.bdr}/>
+                </div>
+                {[["deals","Deals Progress","Any deals moved forward, closed, or new opportunities..."],["leads","Leads & Client Updates","New leads, follow-ups, calls, client interactions..."],["challenges","Challenges / Blockers","Issues, blockers, or concerns to flag..."],["tomorrow","Plan for Tomorrow","Key priorities and tasks for tomorrow..."]].map(([k,label,ph])=>(
+                  <div key={k}>
+                    <label style={{display:"block",fontSize:13,color:C.txtD,marginBottom:8,fontWeight:600}}>{label}</label>
+                    <textarea value={rf[k]} onChange={e=>setRf({...rf,[k]:e.target.value})} placeholder={ph} rows={3} style={inp({resize:"vertical"})} onFocus={e=>e.target.style.borderColor=C.gold} onBlur={e=>e.target.style.borderColor=C.bdr}/>
+                  </div>
+                ))}
+                <div>
+                  <label style={{display:"block",fontSize:13,color:C.txtD,marginBottom:8,fontWeight:600}}>Hours Worked</label>
+                  <select value={rf.hours} onChange={e=>setRf({...rf,hours:e.target.value})} style={inp()} onFocus={e=>e.target.style.borderColor=C.gold} onBlur={e=>e.target.style.borderColor=C.bdr}>
+                    {["4","5","6","7","8","9","10","11","12"].map(h=><option key={h} value={h}>{h} hours</option>)}
+                  </select>
+                </div>
+              </div>
+              {rMsg.t&&<div style={{marginTop:20,padding:"12px 16px",borderRadius:8,fontSize:14,background:rMsg.s==="ok"?C.grnD:C.redD,border:`1px solid ${rMsg.s==="ok"?C.grn:C.red}`,color:rMsg.s==="ok"?C.grn:C.red}}>{rMsg.t}</div>}
+              <div style={{marginTop:22,display:"flex",gap:12}}>
+                <button onClick={submitRpt} style={bts("gold",{padding:"12px 28px",fontSize:15})}>{todayRpt?"Update Report":"Submit Report"} →</button>
+                {rMsg.t&&<button onClick={()=>setRMsg({t:"",s:""})} style={bts("outline")}>Dismiss</button>}
+              </div>
+            </div>
+          )}
+
+          {empTab==="history"&&(
+            myRpts.length===0?(
+              <div style={{...card(),textAlign:"center",padding:"60px 24px"}} className="fade"><div style={{fontSize:52,marginBottom:16}}>📋</div><div style={{fontSize:18,fontWeight:700,color:C.txt}}>No reports yet</div><div style={{color:C.txtD,marginTop:8}}>Your submitted reports will appear here.</div></div>
+            ):myRpts.map(r=>(
+              <div key={r.id} style={{...card(),marginBottom:14}} className="fade">
+                <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",cursor:"pointer"}} onClick={()=>setExpanded(expanded===r.id?null:r.id)}>
+                  <div><div style={{fontSize:15,fontWeight:700,color:C.txt}}>{dateLabel(r.date)}</div><div style={{fontSize:12,color:C.txtD,marginTop:2}}>{r.hours||"8"}h worked · {new Date(r.subAt).toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"})}</div></div>
+                  <div style={{display:"flex",alignItems:"center",gap:10}}>
+                    {r.date===todayStr&&<span style={{padding:"3px 12px",background:C.goldD,border:`1px solid ${C.goldB}`,borderRadius:20,fontSize:11,color:C.gold,fontWeight:600}}>Today</span>}
+                    <span style={{color:C.txtD,fontSize:16,display:"inline-block",transition:"transform 0.2s",transform:expanded===r.id?"rotate(180deg)":"none"}}>▾</span>
+                  </div>
+                </div>
+                {expanded===r.id&&(
+                  <div style={{borderTop:`1px solid ${C.bdr}`,paddingTop:14,marginTop:14,display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+                    {[["Tasks Completed",r.tasks,true],["Deals Progress",r.deals,false],["Leads & Client Updates",r.leads,false],["Challenges",r.challenges,false],["Plan for Tomorrow",r.tomorrow,false]].filter(([,v])=>v).map(([l,v,full])=>(
+                      <div key={l} style={{background:"#252118",borderRadius:8,padding:"12px 14px",...(full?{gridColumn:"1/-1"}:{})}}>
+                        <div style={{fontSize:11,color:C.txtD,textTransform:"uppercase",letterSpacing:1,marginBottom:6,fontWeight:700}}>{l}</div>
+                        <div style={{fontSize:13,color:C.txt,lineHeight:1.7}}>{v}</div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ))
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  // ====== ADMIN ======
+  return(
+    <div style={{minHeight:"100vh",background:C.bg,display:"flex"}} className="fade">
+      <div style={{width:236,background:C.surf,borderRight:`1px solid ${C.bdr}`,display:"flex",flexDirection:"column",position:"sticky",top:0,height:"100vh",flexShrink:0,overflow:"hidden"}}>
+        <div style={{padding:"22px 18px 18px",borderBottom:`1px solid ${C.bdr}`}}>
+          <div style={{display:"flex",alignItems:"center",gap:10}}><span style={{fontSize:26}}>🐝</span><div><div style={{fontFamily:C.serif,fontSize:18,color:C.txt}}>Broker Bee</div><div style={{fontSize:10,color:C.gold,letterSpacing:2,textTransform:"uppercase",fontWeight:700}}>Admin Portal</div></div></div>
+        </div>
+        <nav style={{padding:"14px 10px",flex:1}}>
+          {[["overview","📊","Overview"],["reports","📋","All Reports"],["users","👥","Team Members"]].map(([k,ic,lb])=>(
+            <button key={k} onClick={()=>setAdTab(k)} style={{display:"flex",alignItems:"center",gap:10,width:"100%",padding:"10px 12px",border:"none",borderRadius:8,cursor:"pointer",fontSize:14,fontWeight:500,background:adTab===k?C.goldD:"transparent",color:adTab===k?C.gold:C.txtD,borderLeft:adTab===k?`3px solid ${C.gold}`:"3px solid transparent",marginBottom:3,textAlign:"left",transition:"all 0.15s"}}>
+              <span style={{fontSize:17}}>{ic}</span>{lb}
+            </button>
+          ))}
+        </nav>
+        <div style={{padding:"14px 16px",borderTop:`1px solid ${C.bdr}`}}>
+          <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:12}}>
+            <div style={{width:34,height:34,borderRadius:"50%",background:`linear-gradient(135deg,${C.gold},${C.goldL})`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,fontWeight:800,color:"#0D0B09"}}>AD</div>
+            <div><div style={{fontSize:13,fontWeight:700,color:C.txt}}>{me.name}</div><div style={{fontSize:11,color:C.gold}}>Administrator</div></div>
+          </div>
+          <button onClick={logout} style={bts("outline",{width:"100%",padding:"8px",fontSize:13})} onMouseEnter={e=>{e.target.style.borderColor=C.red;e.target.style.color=C.red;}} onMouseLeave={e=>{e.target.style.borderColor=C.bdr;e.target.style.color=C.txtD;}}>Sign Out</button>
+        </div>
+      </div>
+
+      <div style={{flex:1,overflow:"auto",padding:"32px"}}>
+
+        {adTab==="overview"&&(
+          <div className="fade">
+            <div style={{marginBottom:28}}><div style={{fontSize:24,fontWeight:800,color:C.txt}}>Dashboard</div><div style={{color:C.txtD,fontSize:14,marginTop:4}}>{dateLabel(todayStr)}</div></div>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:16,marginBottom:28}}>
+              {[[actEmps.length,"Team Members","👥",C.blu],[rptdToday.length,"Reported Today","✅",C.grn],[Math.max(0,actEmps.length-rptdToday.length),"Pending Today","⏳",C.gold],[reports.length,"Total Reports","📁",C.txtD]].map(([v,l,ic,co])=>(
+                <div key={l} style={card()}><div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10}}><div style={{fontSize:11,color:C.txtD,textTransform:"uppercase",letterSpacing:1,fontWeight:700}}>{l}</div><span style={{fontSize:22}}>{ic}</span></div><div style={{fontSize:38,fontWeight:800,color:co}}>{v}</div></div>
+              ))}
+            </div>
+            <div style={card()}>
+              <div style={{fontSize:17,fontWeight:700,color:C.txt,marginBottom:18}}>Today's Report Status</div>
+              <div style={{display:"grid",gap:10}}>
+                {empUsrs.map(u=>{const sub=rptdToday.includes(u.id);const ac2=aColor(u.id);return(
+                  <div key={u.id} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"13px 16px",background:C.surf2,borderRadius:10,border:`1px solid ${C.bdr}`}}>
+                    <div style={{display:"flex",alignItems:"center",gap:12}}>
+                      <div style={{width:38,height:38,borderRadius:"50%",background:`linear-gradient(135deg,${ac2},${ac2}77)`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:13,fontWeight:700,color:"#fff",opacity:u.active===false?0.4:1}}>{initials(u.name)}</div>
+                      <div><div style={{fontSize:14,fontWeight:600,color:u.active===false?C.txtM:C.txt}}>{u.name}</div><div style={{fontSize:12,color:C.txtD}}>@{u.username} · {u.dept}</div></div>
+                    </div>
+                    <div style={{display:"flex",alignItems:"center",gap:8}}>
+                      {u.active===false&&<span style={{fontSize:11,color:C.txtM,border:`1px solid ${C.bdr}`,borderRadius:20,padding:"2px 10px"}}>Inactive</span>}
+                      <span style={{padding:"4px 14px",borderRadius:20,fontSize:12,fontWeight:700,background:sub?C.grnD:C.redD,border:`1px solid ${sub?C.grn:C.red}`,color:sub?C.grn:C.red}}>{sub?"✓ Submitted":"⏳ Pending"}</span>
+                    </div>
+                  </div>
+                );})}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {adTab==="reports"&&(
+          <div className="fade">
+            <div style={{marginBottom:22,display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+              <div><div style={{fontSize:22,fontWeight:800,color:C.txt}}>All Reports</div><div style={{color:C.txtD,fontSize:14,marginTop:3}}>{filtRpts.length} report{filtRpts.length!==1?"s":""}</div></div>
+            </div>
+            <div style={{display:"flex",gap:12,marginBottom:20,flexWrap:"wrap"}}>
+              <select value={fUsr} onChange={e=>setFUsr(e.target.value)} style={inp({width:"auto",minWidth:200})}>
+                <option value="all">All Team Members</option>
+                {empUsrs.map(u=><option key={u.id} value={u.id}>{u.name}</option>)}
+              </select>
+              <input type="date" value={fDate} onChange={e=>setFDate(e.target.value)} style={inp({width:"auto"})}/>
+              {(fUsr!=="all"||fDate)&&<button onClick={()=>{setFUsr("all");setFDate("");}} style={bts("outline",{padding:"10px 16px"})}>Clear</button>}
+            </div>
+            {filtRpts.length===0?(
+              <div style={{...card(),textAlign:"center",padding:60}}><div style={{fontSize:48,marginBottom:12}}>📭</div><div style={{fontSize:16,color:C.txtD}}>No reports found</div></div>
+            ):filtRpts.map(r=>{const ac3=aColor(r.uid);const isEx=expanded===r.id;return(
+              <div key={r.id} style={{...card(),marginBottom:12}}>
+                <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",cursor:"pointer"}} onClick={()=>setExpanded(isEx?null:r.id)}>
+                  <div style={{display:"flex",alignItems:"center",gap:12}}>
+                    <div style={{width:40,height:40,borderRadius:"50%",background:`linear-gradient(135deg,${ac3},${ac3}77)`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:14,fontWeight:700,color:"#fff"}}>{initials(r.uname)}</div>
+                    <div><div style={{fontSize:15,fontWeight:700,color:C.txt}}>{r.uname}</div><div style={{fontSize:12,color:C.txtD}}>{dateLabel(r.date)} · {r.hours||"8"}h</div></div>
+                  </div>
+                  <div style={{display:"flex",alignItems:"center",gap:10}}>
+                    {r.date===todayStr&&<span style={{padding:"3px 12px",background:C.goldD,border:`1px solid ${C.goldB}`,borderRadius:20,fontSize:11,color:C.gold,fontWeight:700}}>Today</span>}
+                    <span style={{color:C.txtD,fontSize:16,display:"inline-block",transform:isEx?"rotate(180deg)":"none",transition:"transform 0.2s"}}>▾</span>
+                  </div>
+                </div>
+                {isEx&&(
+                  <div style={{marginTop:16,paddingTop:16,borderTop:`1px solid ${C.bdr}`,display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+                    {[["Tasks Completed",r.tasks,true],["Deals Progress",r.deals,false],["Leads & Client Updates",r.leads,false],["Challenges / Blockers",r.challenges,false],["Plan for Tomorrow",r.tomorrow,false]].filter(([,v])=>v).map(([l,v,full])=>(
+                      <div key={l} style={{background:C.surf3,borderRadius:8,padding:"12px 14px",...(full?{gridColumn:"1/-1"}:{})}}>
+                        <div style={{fontSize:11,color:C.txtD,textTransform:"uppercase",letterSpacing:1,marginBottom:6,fontWeight:700}}>{l}</div>
+                        <div style={{fontSize:13,color:C.txt,lineHeight:1.7}}>{v}</div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            );})}
+          </div>
+        )}
+
+        {adTab==="users"&&(
+          <div className="fade">
+            <div style={{marginBottom:22,display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+              <div><div style={{fontSize:22,fontWeight:800,color:C.txt}}>Team Members</div><div style={{color:C.txtD,fontSize:14,marginTop:3}}>{users.length} users</div></div>
+              <button onClick={()=>{setUModal(true);setEditUsr(null);setUf({name:"",username:"",email:"",password:"",dept:"Brokerage",role:"employee"});setUMsg("");}} style={bts("gold")}>+ Add Member</button>
+            </div>
+            <div style={{display:"grid",gap:10}}>
+              {users.map(u=>{const ac4=aColor(u.id);return(
+                <div key={u.id} style={{...card(),display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:12}}>
+                  <div style={{display:"flex",alignItems:"center",gap:14}}>
+                    <div style={{width:46,height:46,borderRadius:"50%",background:`linear-gradient(135deg,${ac4},${ac4}77)`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:15,fontWeight:700,color:"#fff",opacity:u.active===false?0.3:1}}>{initials(u.name)}</div>
+                    <div>
+                      <div style={{fontSize:15,fontWeight:700,color:u.active===false?C.txtD:C.txt}}>{u.name}</div>
+                      <div style={{fontSize:13,color:C.txtD}}>@{u.username}{u.email?` · ${u.email}`:""}</div>
+                      <div style={{fontSize:12,color:C.txtM,marginTop:2}}>{u.dept} · <span style={{color:u.role==="admin"?C.gold:C.blu}}>{u.role}</span></div>
+                    </div>
+                  </div>
+                  <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+                    <span style={{padding:"4px 12px",borderRadius:20,fontSize:11,fontWeight:700,background:u.active!==false?C.grnD:C.redD,border:`1px solid ${u.active!==false?C.grn:C.red}`,color:u.active!==false?C.grn:C.red}}>{u.active!==false?"Active":"Inactive"}</span>
+                    <button onClick={()=>openEdit(u)} style={bts("outline",{padding:"7px 14px",fontSize:13})}>Edit</button>
+                    {u.id!==me.id&&<button onClick={()=>toggleActive(u.id)} style={bts("outline",{padding:"7px 14px",fontSize:13,borderColor:u.active!==false?C.red:C.grn,color:u.active!==false?C.red:C.grn})}>{u.active!==false?"Deactivate":"Activate"}</button>}
+                  </div>
+                </div>
+              );})}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {uModal&&(
+        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.75)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:999}}>
+          <div style={{...card(),width:460,boxShadow:"0 30px 80px rgba(0,0,0,0.7)",maxHeight:"90vh",overflow:"auto"}} className="fade">
+            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:22}}>
+              <div style={{fontSize:18,fontWeight:700,color:C.txt}}>{editUsr?"Edit Member":"Add New Member"}</div>
+              <button onClick={()=>{setUModal(false);setEditUsr(null);setUMsg("");}} style={{background:"none",border:"none",cursor:"pointer",color:C.txtD,fontSize:22,lineHeight:1}}>✕</button>
+            </div>
+            <div style={{display:"grid",gap:16}}>
+              {[["Full Name","name","text","Jane Smith"],["Username","username","text","jane.smith"],["Email","email","email","jane@brokerbee.com"],["Password","password","password","Secure@123"]].map(([l,f,t,ph])=>(
+                <div key={f}>
+                  <label style={{display:"block",fontSize:13,color:C.txtD,marginBottom:8,fontWeight:600}}>{l}{["name","username","password"].includes(f)&&<span style={{color:C.red}}> *</span>}</label>
+                  <input type={t} value={uf[f]} onChange={e=>setUf({...uf,[f]:e.target.value})} placeholder={ph} style={inp()} onFocus={e=>e.target.style.borderColor=C.gold} onBlur={e=>e.target.style.borderColor=C.bdr}/>
+                </div>
+              ))}
+              <div>
+                <label style={{display:"block",fontSize:13,color:C.txtD,marginBottom:8,fontWeight:600}}>Department</label>
+                <select value={uf.dept} onChange={e=>setUf({...uf,dept:e.target.value})} style={inp()} onFocus={e=>e.target.style.borderColor=C.gold} onBlur={e=>e.target.style.borderColor=C.bdr}>
+                  {["Brokerage","Management","Operations","Sales","Compliance","Technology","Finance"].map(d=><option key={d} value={d}>{d}</option>)}
+                </select>
+              </div>
+              <div>
+                <label style={{display:"block",fontSize:13,color:C.txtD,marginBottom:8,fontWeight:600}}>Role</label>
+                <select value={uf.role} onChange={e=>setUf({...uf,role:e.target.value})} style={inp()} onFocus={e=>e.target.style.borderColor=C.gold} onBlur={e=>e.target.style.borderColor=C.bdr}>
+                  <option value="employee">Employee</option>
+                  <option value="admin">Administrator</option>
+                </select>
+              </div>
+            </div>
+            {uMsg&&<div style={{marginTop:14,padding:"10px 14px",background:C.redD,border:`1px solid ${C.red}`,borderRadius:8,fontSize:13,color:C.red}}>{uMsg}</div>}
+            <div style={{display:"flex",gap:12,marginTop:22}}>
+              <button onClick={saveUsr} style={bts("gold",{padding:"11px 24px",fontSize:15})}>{editUsr?"Save Changes":"Add Member"}</button>
+              <button onClick={()=>{setUModal(false);setEditUsr(null);setUMsg("");}} style={bts("outline")}>Cancel</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
+</script>
+</body>
+</html>
