@@ -71,6 +71,7 @@ function App(){
   const[rMsg,setRMsg]=useState({t:"",s:""});
   const[adTab,setAdTab]=useState("overview");
   const[fUsr,setFUsr]=useState("all");const[fDate,setFDate]=useState("");const[expanded,setExpanded]=useState(null);
+  const[loginLogs,setLoginLogs]=useState([]);
   const[uModal,setUModal]=useState(false);const[editUsr,setEditUsr]=useState(null);
   const[uf,setUf]=useState({name:"",username:"",email:"",password:"",dept:"Brokerage",role:"employee"});
   const[uMsg,setUMsg]=useState("");
@@ -79,13 +80,14 @@ function App(){
     (async()=>{
       const u=await DB.get("bbhr_u5",null);
       const r=await DB.get("bbhr_r5",[]);
+      const ll=await DB.get("bbhr_l5",[]);
       if(!u){await DB.set("bbhr_u5",INIT_USERS);setUsers(INIT_USERS);}else setUsers(u);
-      setReports(r);setLoading(false);
+      setReports(r);setLoginLogs(ll);setLoading(false);
     })();
   },[]);
 
   const todayStr=today();
-  const login=e=>{e.preventDefault();const user=users.find(u=>(u.username===un.trim()||u.email===un.trim())&&u.password===pw&&u.active!==false);if(user){setMe(user);setLoginErr("");setUn("");setPw("");}else setLoginErr("Incorrect username or password.");};
+  const login=async e=>{e.preventDefault();const user=users.find(u=>(u.username===un.trim()||u.email===un.trim())&&u.password===pw&&u.active!==false);if(user){const newLog={id:`l${Date.now()}`,uid:user.id,name:user.name,role:user.role,dept:user.dept||"",ts:new Date().toISOString()};const updLogs=[newLog,...loginLogs].slice(0,500);await DB.set("bbhr_l5",updLogs);setLoginLogs(updLogs);setMe(user);setLoginErr("");setUn("");setPw("");}else setLoginErr("Incorrect username or password.");};
   const logout=()=>{setMe(null);setEmpTab("submit");setAdTab("overview");setRMsg({t:"",s:""});};
   const submitRpt=async()=>{if(!rf.tasks.trim()){setRMsg({t:"Tasks Completed is required.",s:"err"});return;}const ex=reports.find(r=>r.uid===me.id&&r.date===todayStr);const d={...rf,uid:me.id,uname:me.name,dept:me.dept,date:todayStr,updAt:new Date().toISOString()};const up=ex?reports.map(r=>r.id===ex.id?{...r,...d}:r):[...reports,{id:`r${Date.now()}`,subAt:new Date().toISOString(),...d}];await DB.set("bbhr_r5",up);setReports(up);setRMsg({t:ex?"Report updated! ✓":"Report submitted! ✓",s:"ok"});if(!ex)setRf({tasks:"",deals:"",leads:"",challenges:"",tomorrow:"",hours:"8"});};
   const saveUsr=async()=>{if(!uf.name||!uf.username||!uf.password){setUMsg("Name, username and password are required.");return;}if(users.find(u=>u.username===uf.username&&u.id!==editUsr?.id)){setUMsg("Username already taken.");return;}const up=editUsr?users.map(u=>u.id===editUsr.id?{...u,...uf}:u):[...users,{...uf,id:`u${Date.now()}`,active:true}];await DB.set("bbhr_u5",up);setUsers(up);setUModal(false);setEditUsr(null);setUf({name:"",username:"",email:"",password:"",dept:"Brokerage",role:"employee"});setUMsg("");};
@@ -133,16 +135,7 @@ function App(){
             {loginErr&&<div style={{marginBottom:18,padding:"10px 14px",background:C.redD,border:`1px solid ${C.red}`,borderRadius:8,fontSize:13,color:C.red}}>{loginErr}</div>}
             <button type="submit" style={bts("gold",{width:"100%",padding:"13px",fontSize:15,borderRadius:10})}>Sign In →</button>
           </form>
-          <div style={{marginTop:24,padding:"16px",background:C.goldD,border:`1px solid ${C.goldB}`,borderRadius:10}}>
-            <div style={{fontSize:11,color:C.gold,fontWeight:700,marginBottom:10,textTransform:"uppercase",letterSpacing:1}}>Default Credentials</div>
-            <div style={{fontSize:12,color:C.txtD,lineHeight:2.1}}>
-              <span style={{color:C.gold}}>Admin:</span> admin / Admin@BrokerBee24<br/>
-              <span style={{color:C.gold}}>Arshmaan:</span> arshmaan.ali / Arshmaan@123<br/>
-              <span style={{color:C.gold}}>Steve:</span> steve.nickerson / Steve@123<br/>
-              <span style={{color:C.gold}}>Luka:</span> luka.simonson / Luka@123<br/>
-              <span style={{color:C.gold}}>Yezil:</span> yezil.hose / Yezil@123
-            </div>
-          </div>
+
         </div>
         <div style={{textAlign:"center",marginTop:20,color:C.txtM,fontSize:12}}>© 2025 Broker Bee · All rights reserved</div>
       </div>
@@ -246,7 +239,7 @@ function App(){
           <div style={{display:"flex",alignItems:"center",gap:10}}><span style={{fontSize:26}}>🐝</span><div><div style={{fontFamily:C.serif,fontSize:18,color:C.txt}}>Broker Bee</div><div style={{fontSize:10,color:C.gold,letterSpacing:2,textTransform:"uppercase",fontWeight:700}}>Admin Portal</div></div></div>
         </div>
         <nav style={{padding:"14px 10px",flex:1}}>
-          {[["overview","📊","Overview"],["reports","📋","All Reports"],["users","👥","Team Members"]].map(([k,ic,lb])=>(
+          {[["overview","📊","Overview"],["reports","📋","All Reports"],["users","👥","Team Members"],["activity","🕐","Login Activity"]].map(([k,ic,lb])=>(
             <button key={k} onClick={()=>setAdTab(k)} style={{display:"flex",alignItems:"center",gap:10,width:"100%",padding:"10px 12px",border:"none",borderRadius:8,cursor:"pointer",fontSize:14,fontWeight:500,background:adTab===k?C.goldD:"transparent",color:adTab===k?C.gold:C.txtD,borderLeft:adTab===k?`3px solid ${C.gold}`:"3px solid transparent",marginBottom:3,textAlign:"left",transition:"all 0.15s"}}>
               <span style={{fontSize:17}}>{ic}</span>{lb}
             </button>
@@ -358,6 +351,36 @@ function App(){
                 </div>
               );})}
             </div>
+          </div>
+        )}
+
+        {adTab==="activity"&&(
+          <div className="fade">
+            <div style={{marginBottom:22}}>
+              <div style={{fontSize:22,fontWeight:800,color:C.txt}}>Login Activity</div>
+              <div style={{color:C.txtD,fontSize:14,marginTop:3}}>All sign-in timestamps across the team</div>
+            </div>
+            {loginLogs.length===0?(
+              <div style={{...card(),textAlign:"center",padding:60}}><div style={{fontSize:48,marginBottom:12}}>🕐</div><div style={{fontSize:16,color:C.txtD}}>No login activity yet</div><div style={{fontSize:13,color:C.txtM,marginTop:6}}>Timestamps will appear here after users sign in.</div></div>
+            ):(
+              <div style={{display:"grid",gap:8}}>
+                {loginLogs.map((log,i)=>{const ac=aColor(log.uid);const dt=new Date(log.ts);const dateStr=dt.toLocaleDateString("en-US",{weekday:"short",month:"short",day:"numeric",year:"numeric"});const timeStr=dt.toLocaleTimeString([],{hour:"2-digit",minute:"2-digit",second:"2-digit"});return(
+                  <div key={log.id||i} style={{...card(),display:"flex",alignItems:"center",justifyContent:"space-between",padding:"14px 20px"}}>
+                    <div style={{display:"flex",alignItems:"center",gap:12}}>
+                      <div style={{width:38,height:38,borderRadius:"50%",background:`linear-gradient(135deg,${ac},${ac}77)`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:13,fontWeight:700,color:"#fff",flexShrink:0}}>{initials(log.name)}</div>
+                      <div>
+                        <div style={{fontSize:14,fontWeight:700,color:C.txt}}>{log.name}</div>
+                        <div style={{fontSize:12,color:C.txtD,marginTop:2}}>{log.dept||""}{log.dept?" · ":""}<span style={{color:log.role==="admin"?C.gold:C.blu}}>{log.role}</span></div>
+                      </div>
+                    </div>
+                    <div style={{textAlign:"right"}}>
+                      <div style={{fontSize:14,fontWeight:600,color:C.gold}}>{timeStr}</div>
+                      <div style={{fontSize:12,color:C.txtD,marginTop:2}}>{dateStr}</div>
+                    </div>
+                  </div>
+                );})}
+              </div>
+            )}
           </div>
         )}
       </div>
